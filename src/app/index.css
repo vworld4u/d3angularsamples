@@ -13,7 +13,8 @@
   width: 50px;
 }
 
-svg {
+
+/*svg {
   background-color: #FFF;
   cursor: default;
   -webkit-user-select: none;
@@ -21,8 +22,10 @@ svg {
   -ms-user-select: none;
   -o-user-select: none;
   user-select: none;
-}
+}*/
 
+
+/*
 svg:not(.active):not(.ctrl) {
   cursor: crosshair;
 }
@@ -50,12 +53,12 @@ path.link.hidden {
   stroke-width: 0;
 }
 
-circle.node {
+rect.node {
   stroke-width: 1.5px;
   cursor: pointer;
 }
 
-circle.node.reflexive {
+rect.node.reflexive {
   stroke: #000 !important;
   stroke-width: 2.5px;
 }
@@ -68,4 +71,67 @@ text {
 text.id {
   text-anchor: middle;
   font-weight: bold;
+}*/
+
+.node {
+  cursor: pointer;
+}
+
+.overlay {
+  background-color: #EEE;
+}
+
+.node rect {
+  fill: #fff;
+  stroke: steelblue;
+  stroke-width: 2px;
+}
+
+.node rect .selected {
+  fill: #fff;
+  stroke: #29B6F6;
+  stroke-width: 2px;
+}
+
+.node text {
+  font-size: 12px;
+  font-family: sans-serif;
+}
+
+.link {
+  fill: none;
+  stroke: #ccc;
+  stroke-width: 4px;
+}
+
+.templink {
+  fill: none;
+  stroke: red;
+  stroke-width: 3px;
+}
+
+.ghostCircle.show {
+  display: block;
+}
+
+.ghostCircle, .activeDrag .ghostCircle {
+  display: none;
+}
+
+.dot circle {
+  fill: lightsteelblue;
+  stroke: steelblue;
+  stroke-width: 1.5px;
+}
+
+.dot circle.dragging {
+  fill: red;
+  stroke: brown;
+}
+
+.axis line {
+  fill: none;
+  stroke: #ddd;
+  shape-rendering: crispEdges;
+  vector-effect: non-scaling-stroke;
 }

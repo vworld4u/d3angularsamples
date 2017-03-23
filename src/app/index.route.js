@@ -10,9 +10,9 @@
     $stateProvider
       .state('home', {
         url: '/',
-        templateUrl: 'app/main/main.html',
-        controller: 'MainController',
-        controllerAs: 'main'
+        templateUrl: 'app/about/about.html',
+        controller: 'AboutCtrl',
+        controllerAs: 'vm'
       }).state('about', {
         url: '/about',
         templateUrl: 'app/about/about.html',
@@ -20,7 +20,7 @@
         controllerAs: 'vm'
       });
 
-    $urlRouterProvider.otherwise('/about');
+    $urlRouterProvider.otherwise('/');
   }
 
 })();

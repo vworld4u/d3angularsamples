@@ -72,21 +72,35 @@
           nodes = $scope.nodes,
           lastNodeId = 0,
           colors = d3.scale.category10();
+        var zoom = d3.behavior.zoom()
+          .scaleExtent([1, 10])
+          .on('zoom', zoomed);
+
+        var drag = d3.behavior.drag()
+          .origin(function (d) {
+            return d;
+          })
+          .on('dragstart', dragstarted)
+          .on('drag', dragged)
+          .on('dragend', dragended);
         svg.attr('viewBox', '0,0,' + $scope.extras.width + ',' + $scope.extras.height)
           .style('background-color', '#f0f0f0')
           .text('The Scene Graph')
-          .select('#graph');
+          .select('#graph').call(zoom);
 
+        var container = svg.append('g');
+        
         force = d3.layout.force()
           .nodes(nodes)
           .links(links)
           .size([$scope.extras.width, $scope.extras.height])
           .linkDistance(150)
           .charge(-500)
+          .gravity(0.003)
           .on('tick', tick);
 
         // define arrow markers for graph links
-        svg.append('svg:defs').append('svg:marker')
+        container.append('svg:defs').append('svg:marker')
           .attr('id', 'end-arrow')
           .attr('viewBox', '0 -5 10 10')
           .attr('refX', 6)
@@ -97,7 +111,7 @@
           .attr('d', 'M0,-5L10,0L0,5')
           .attr('fill', '#000');
 
-        svg.append('svg:defs').append('svg:marker')
+        container.append('svg:defs').append('svg:marker')
           .attr('id', 'start-arrow')
           .attr('viewBox', '0 -5 10 10')
           .attr('refX', 4)
@@ -109,13 +123,13 @@
           .attr('fill', '#000');
 
         // line displayed when dragging new nodes
-        var drag_line = svg.append('svg:path')
+        var drag_line = container.append('svg:path')
           .attr('class', 'link dragline hidden')
           .attr('d', 'M0,0L0,0');
 
         // handles to link and node element groups
-        var path = svg.append('svg:g').selectAll('path'),
-          circle = svg.append('svg:g').selectAll('g');
+        var path = container.append('svg:g').selectAll('path'),
+          circle = container.append('svg:g').selectAll('g');
 
         // mouse event vars
         var selected_node = null,
@@ -381,7 +395,7 @@
                     p_el.select('foreignObject').remove();
                   }
                 });
-            });
+            }).call(drag);
 
           // show node IDs
           g.append('svg:text')
@@ -406,9 +420,26 @@
           force.start();
         }
 
+        function zoomed() {
+          container.attr('transform', 'translate(' + d3.event.translate + ')scale(' + d3.event.scale + ')');
+        }
+
+        function dragstarted(d) {
+          d3.event.sourceEvent.stopPropagation();
+          d3.select(this).classed('dragging', true);
+        }
+
+        function dragged(d) {
+          d3.select(this).attr('cx', d.x = d3.event.x).attr('cy', d.y = d3.event.y);
+        }
+
+        function dragended(d) {
+          d3.select(this).classed('dragging', false);
+        }
+
         function mousedown() {
           // prevent I-bar on drag
-          //d3.event.preventDefault();
+          d3.event.preventDefault();
 
           // because :active only works in WebKit?
           svg.classed('active', true);

@@ -5,10 +5,10 @@
     .module('mindmapsample')
     .directive('mindmap', directive);
 
-  directive.$inject = ['d3Service'];
+  directive.$inject = ['d3Service', '_'];
 
   /* @ngInject */
-  function directive(d3Service) {
+  function directive(d3Service, _) {
     var directive = {
       bindToController: false,
       controller: Controller,
@@ -30,7 +30,7 @@
         scope.svg = d3.select(element[0])
           .append('svg')
           .style('width', '1040px')
-          .style('height', '900px');
+          .style('height', '600px');
         scope.rerender();
         // Browser onresize event
         window.onresize = function () {
@@ -71,11 +71,34 @@
           links = $scope.links,
           nodes = $scope.nodes,
           lastNodeId = 0,
-          colors = d3.scale.category10();
+          selectedNode = null,
+          selectedLink = null,
+          mousedownLink = null,
+          mousedownNode = null,
+          mouseupNode = null,
+          path, nodeEls,
+          dragLine, container,
+          colors = d3.scale.category10(),
+          size, zoom, minZoom = 0.1,
+          maxZoom = 7,
+          textSize = 15,
+          rectHeight = 40,
+          selectedRectHeight = 50,
+          strokeWidth = 3,
+          drag;
+
+        var w = window.innerWidth;
+        var h = window.innerHeight;
+        size = d3.scale.pow().exponent(1)
+          .domain([1, 100])
+          .range([8, 24]);
+        zoom = d3.behavior.zoom().scaleExtent([minZoom, maxZoom])
+
         svg.attr('viewBox', '0,0,' + $scope.extras.width + ',' + $scope.extras.height)
           .style('background-color', '#f0f0f0')
           .text('The Scene Graph')
           .select('#graph');
+        container = svg.append('g');
 
         force = d3.layout.force()
           .nodes(nodes)
@@ -84,6 +107,8 @@
           .linkDistance(150)
           .charge(-500)
           .on('tick', tick);
+
+        drag = force.drag;
 
         // define arrow markers for graph links
         svg.append('svg:defs').append('svg:marker')
@@ -109,25 +134,18 @@
           .attr('fill', '#000');
 
         // line displayed when dragging new nodes
-        var drag_line = svg.append('svg:path')
+        dragLine = svg.append('svg:path')
           .attr('class', 'link dragline hidden')
           .attr('d', 'M0,0L0,0');
 
         // handles to link and node element groups
-        var path = svg.append('svg:g').selectAll('path'),
-          circle = svg.append('svg:g').selectAll('g');
-
-        // mouse event vars
-        var selected_node = null,
-          selected_link = null,
-          mousedown_link = null,
-          mousedown_node = null,
-          mouseup_node = null;
+        path = container.append('svg:g').selectAll('path');
+        nodeEls = container.append('svg:g').selectAll('g');
 
         function resetMouseVars() {
-          mousedown_node = null;
-          mouseup_node = null;
-          mousedown_link = null;
+          mousedownNode = null;
+          mouseupNode = null;
+          mousedownLink = null;
         }
 
         // update force layout (called automatically each iteration)
@@ -148,7 +166,7 @@
             return 'M' + sourceX + ',' + sourceY + 'L' + targetX + ',' + targetY;
           });
 
-          circle.attr('transform', function (d) {
+          nodeEls.attr('transform', function (d) {
             return 'translate(' + d.x + ',' + d.y + ')';
           });
         }
@@ -160,7 +178,7 @@
 
           // update existing links
           path.classed('selected', function (d) {
-              return d === selected_link;
+              return d === selectedLink;
             })
             .style('marker-start', function (d) {
               return d.left ? 'url(#start-arrow)' : '';
@@ -169,12 +187,11 @@
               return d.right ? 'url(#end-arrow)' : '';
             });
 
-
           // add new links
           path.enter().append('svg:path')
             .attr('class', 'link')
             .classed('selected', function (d) {
-              return d === selected_link;
+              return d === selectedLink;
             })
             .style('marker-start', function (d) {
               return d.left ? 'url(#start-arrow)' : '';
@@ -186,158 +203,202 @@
               if (d3.event.ctrlKey) return;
 
               // select link
-              mousedown_link = d;
-              if (mousedown_link === selected_link) selected_link = null;
-              else selected_link = mousedown_link;
-              selected_node = null;
+              mousedownLink = d;
+              if (mousedownLink === selectedLink) {
+                selectedLink = null;
+              } else {
+                selectedLink = mousedownLink;
+              }
+              selectedNode = null;
               restart();
             });
 
           // remove old links
           path.exit().remove();
 
-          // circle (node) group
+          // nodeEls (node) group
           // NB: the function arg is crucial here! nodes are known by id, not by index!
-          circle = circle.data(nodes, function (d) {
+          _.forEach(nodes, function (d) {
+            d.width = (d.title ? d.title.length : 5) * textSize;
+            d.height = rectHeight;
+          });
+          nodeEls = nodeEls.data(nodes, function (d) {
             return d.id;
           });
 
           // update existing nodes (reflexive & selected visual states)
-          circle.selectAll('circle')
-            .style('fill', function (d) {
-              return (d === selected_node) ? d3.rgb(colors(d.id)).brighter().toString() : colors(d.id);
+          nodeEls.selectAll('rect')
+            .attr('width', function (d) {
+              return d.width;
+            }).attr('height', function (d) {
+              return (d === selectedNode) ? selectedRectHeight : rectHeight;
+            }).style('fill', function (d) {
+              return (d === selectedNode) ? '#81D4FA' : '#4FC3F7';
+            }).style('stroke', function (d) {
+              return (d === selectedNode) ? '#00838F' : '#0277BD';
             })
             .classed('reflexive', function (d) {
               return d.reflexive;
             });
 
+          nodeEls.selectAll('text').style('font-size', textSize + 'px');
           // add new nodes
-          var g = circle.enter().append('svg:g');
+          var g = nodeEls.enter().append('svg:g').attr('class', 'node'); //.call(drag);
 
-          g.append('svg:circle')
-            .attr('class', 'node')
-            .attr('r', 12)
+          g.append('svg:rect')
+            .attr('width', function (d) {
+              return d.width;
+            }).attr('height', function (d) {
+              return (d === selectedNode) ? selectedRectHeight : rectHeight;
+            }).attr('rx', 5)
+            .attr('ry', 5)
             .style('fill', function (d) {
-              return (d === selected_node) ? d3.rgb(colors(d.id)).brighter().toString() : colors(d.id);
-            })
-            .style('stroke', function (d) {
-              return d3.rgb(colors(d.id)).darker().toString();
-            })
-            .classed('reflexive', function (d) {
-              return d.reflexive;
+              return (d === selectedNode) ? '#81D4FA' : '#4FC3F7';
+            }).style('stroke', function (d) {
+              return (d === selectedNode) ? '#00838F' : '#0277BD';
+            }).style('stroke-width', function (d) {
+              return (d === selectedNode) ? strokeWidth + 2 : strokeWidth;
+            }).classed('selected', function (d) {
+              return d === selectedNode;
             })
             .on('mouseover', function (d) {
-              if (!mousedown_node || d === mousedown_node) return;
+              if (!mousedownNode || d === mousedownNode) return;
               // enlarge target node
               d3.select(this).attr('transform', 'scale(1.1)');
             })
             .on('mouseout', function (d) {
-              if (!mousedown_node || d === mousedown_node) return;
+              if (!mousedownNode || d === mousedownNode) return;
               // unenlarge target node
               d3.select(this).attr('transform', '');
             })
-            .on('mousedown', function (d) {
-              if (d3.event.ctrlKey) return;
-
-              // select node
-              mousedown_node = d;
-              if (mousedown_node === selected_node) selected_node = null;
-              else selected_node = mousedown_node;
-              selected_link = null;
-
-              // reposition drag line
-              drag_line
-                .style('marker-end', 'url(#end-arrow)')
-                .classed('hidden', false)
-                .attr('d', 'M' + mousedown_node.x + ',' + mousedown_node.y + 'L' + mousedown_node.x + ',' +
-                  mousedown_node.y);
-
-              restart();
-            })
-            .on('mouseup', function (d) {
-              if (!mousedown_node) return;
-
-              // needed by FF
-              drag_line
-                .classed('hidden', true)
-                .style('marker-end', '');
-
-              // check for drag-to-self
-              mouseup_node = d;
-              if (mouseup_node === mousedown_node) {
-                resetMouseVars();
-                return;
-              }
-
-              // unenlarge target node
-              d3.select(this).attr('transform', '');
-
-              // add link to graph (update if exists)
-              // NB: links are strictly source < target; arrows separately specified by booleans
-              var source, target, direction;
-              if (mousedown_node.id < mouseup_node.id) {
-                source = mousedown_node;
-                target = mouseup_node;
-                direction = 'right';
-              } else {
-                source = mouseup_node;
-                target = mousedown_node;
-                direction = 'left';
-              }
-
-              var link;
-              link = links.filter(function (l) {
-                return (l.source === source && l.target === target);
-              })[0];
-
-              if (link) {
-                link[direction] = true;
-              } else {
-                link = {
-                  source: source,
-                  target: target,
-                  left: false,
-                  right: false
-                };
-                link[direction] = true;
-                links.push(link);
-              }
-
-              // select new link
-              selected_link = link;
-              selected_node = null;
-              restart();
+            .on('mousedown', mousedownEvent)
+            .on('mouseup', mouseupEvent)
+            .on('dblclick', function (d) {
+              makeEditable(d);
             });
 
           // show node IDs
           g.append('svg:text')
-            .attr('x', 0)
-            .attr('y', 4)
-            .attr('class', 'id')
+            .attr('x', function (d) {
+              return 10;
+            }).attr('y', function (d) {
+              return d === selectedNode ? 28 : 22;
+            }).attr('class', 'id')
+            .style('font-size', textSize + 'px')
             .text(function (d) {
-              return d.id;
-            });
+              return d.title;
+            }).on('dblclick', makeEditable).on('mouseup', mouseupEvent).on('mousedown', mousedownEvent);
 
           // remove old nodes
-          circle.exit().remove();
+          nodeEls.exit().remove();
 
           // set the graph in motion
           force.start();
         }
 
-        function mousedown() {
+        function mousedownEvent(d) {
+          //   if (d3.event.ctrlKey) return;
+
+          // select node
+          mousedownNode = d;
+          if (mousedownNode === selectedNode) {
+            selectedNode = null;
+          } else {
+            selectedNode = mousedownNode;
+          }
+          selectedLink = null;
+
+          // reposition drag line
+          var x = mousedownNode.x + mousedownNode.width / 2,
+            y = mousedownNode.y + mousedownNode.height / 2;
+          dragLine
+            .style('marker-end', 'url(#end-arrow)')
+            .classed('hidden', false)
+            .attr('d', 'M' + x + ',' + y + 'L' + x + ',' + y);
+
+          restart();
+        }
+
+        function mouseupEvent(d) {
+          if (!mousedownNode) return;
+
+          // needed by FF
+          dragLine
+            .classed('hidden', true)
+            .style('marker-end', '');
+
+          // check for drag-to-self
+          mouseupNode = d;
+          if (mouseupNode === mousedownNode) {
+            resetMouseVars();
+            return;
+          }
+
+          // unenlarge target node
+          d3.select(this).attr('transform', '');
+
+          // add link to graph (update if exists)
+          // NB: links are strictly source < target; arrows separately specified by booleans
+          var source, target, direction;
+
+          source = mousedownNode;
+          target = mouseupNode;
+          direction = 'right';
+
+          // if (mousedownNode.id < mouseupNode.id) {
+          //   source = mousedownNode;
+          //   target = mouseupNode;
+          //   direction = 'right';
+          // } else {
+          //   source = mouseupNode;
+          //   target = mousedownNode;
+          //   direction = 'left';
+          // }
+
+          var link;
+          link = links.filter(function (l) {
+            return (l.source === source && l.target === target);
+          })[0];
+
+          if (link) {
+            link[direction] = true;
+          } else {
+            link = {
+              source: source,
+              target: target,
+              left: false,
+              right: false
+            };
+            link[direction] = true;
+            links.push(link);
+          }
+
+          // select new link
+          selectedLink = link;
+          selectedNode = null;
+          mousedownNode = null;
+          mouseupNode = null;
+          restart();
+        }
+
+        function dblClick() {
+          if (d3.event.target.nodeName === 'rect' || d3.event.target.nodeName === 'text') {
+            // makeEditable();
+            return;
+          }
           // prevent I-bar on drag
-          //d3.event.preventDefault();
+          d3.event.preventDefault();
 
           // because :active only works in WebKit?
           svg.classed('active', true);
 
-          if (d3.event.ctrlKey || mousedown_node || mousedown_link) return;
+          if (d3.event.ctrlKey || mousedownNode || mousedownLink) return;
 
           // insert new node at point
           var point = d3.mouse(this),
             node = {
               id: ++lastNodeId,
+              title: 'N-' + lastNodeId,
               reflexive: false
             };
           node.x = point[0];
@@ -347,30 +408,132 @@
           restart();
         }
 
+        function makeEditable(d) {
+          var p = d3.event.target.parentNode,
+            field = 'title',
+            xy, pxy, el, pel, inp, frm;
+
+          // inject a HTML form to edit the content here...
+
+          // bug in the getBBox logic here, but don't know what I've done wrong here;
+          // anyhow, the coordinates are completely off & wrong. :-((
+          xy = p.getBBox();
+          pxy = p.getBBox();
+          xy.x -= pxy.x;
+          xy.y -= pxy.y;
+          el = d3.select(this);
+          pel = d3.select(p);
+          frm = pel.append('foreignObject');
+          inp = frm
+            .attr('x', xy.x)
+            .attr('y', xy.y)
+            .attr('width', xy.width < 150 ? 150 : xy.width)
+            .attr('height', xy.height < 20 ? 20 : xy.height)
+            .append('xhtml:form')
+            .append('input')
+            .attr('value', function () {
+              // nasty spot to place this call, but here we are sure that the <input> tag is available
+              // and is handily pointed at by 'this':
+              d3.event.target.focus();
+              return d[field];
+            })
+            .attr('style', 'width: ' + (xy.width < 150 ? 150 : xy.width) + 'px;font-size:' + textSize + 'px;  ')
+            // make the form go away when you jump out (form looses focus) or hit ENTER:
+            .on('blur', function () {
+              console.log('blur', d3.event.target, arguments);
+              var txt = inp.node().value;
+              d[field] = txt;
+              el.text(function (d) {
+                return d[field];
+              });
+              pel.select('text').text(function (d) {
+                return d[field];
+              });
+              d.width = d.width = (d.title ? d.title.length : 5) * 12;
+              pel.select('rect').attr('width', function (d) {
+                return d.width;
+              });
+              if (el.nextSibling) {
+                el.nextSibling.text(function (d) {
+                  return d[field];
+                });
+              }
+              // Note to self: frm.remove() will remove the entire <g> group! Remember the D3 selection logic!
+              if (pel.select('foreignObject').size() > 0) {
+                pel.select('foreignObject').remove();
+              }
+            })
+            .on('keypress', function () {
+              console.log('keypress', d3.event.target, arguments);
+              // IE fix
+              if (!d3.event) {
+                d3.event = window.event;
+              }
+
+              var e = d3.event,
+                txt;
+              if (e.keyCode === 13) {
+                if (typeof (e.cancelBubble) !== 'undefined') { // IE
+                  e.cancelBubble = true;
+                }
+                if (e.stopPropagation) {
+                  e.stopPropagation();
+                }
+                e.preventDefault();
+                txt = inp.node().value;
+
+                d[field] = txt;
+                el.text(function (d) {
+                  return d[field];
+                });
+                pel.select('text').text(function (d) {
+                  return d[field];
+                });
+                d.width = d.width = (d.title ? d.title.length : 5) * 12;
+                pel.select('rect').attr('width', function (d) {
+                  return d.width;
+                });
+                if (el.nextSibling) {
+                  el.nextSibling.text(function (d) {
+                    return d[field];
+                  });
+                }
+                // odd. Should work in Safari, but the debugger crashes on this instead.
+                // Anyway, it SHOULD be here and it doesn't hurt otherwise.
+                if (pel.select('foreignObject').size() > 0) {
+                  pel.select('foreignObject').remove();
+                }
+              }
+            });
+          inp[0][0].focus();
+        }
+
         function mousemove() {
-          if (!mousedown_node) return;
+          if (!mousedownNode) {
+            return;
+          }
 
           // update drag line
-          drag_line.attr('d', 'M' + mousedown_node.x + ',' + mousedown_node.y + 'L' + d3.mouse(this)[0] + ',' + d3.mouse(
+          dragLine.attr('d', 'M' + mousedownNode.x + ',' + mousedownNode.y + 'L' + d3.mouse(this)[0] + ',' + d3.mouse(
             this)[1]);
 
           restart();
         }
 
-        function mouseup() {
-          if (mousedown_node) {
-            // hide drag line
-            drag_line
-              .classed('hidden', true)
-              .style('marker-end', '');
-          }
+        // function mouseup() {
+        //   if (mousedownNode) {
+        //     // hide drag line
+        //     dragLine
+        //       .classed('hidden', true)
+        //       .style('marker-end', '');
+        //   }
 
-          // because :active only works in WebKit?
-          svg.classed('active', false);
+        //   // because :active only works in WebKit?
+        //   svg.classed('active', false);
 
-          // clear mouse event vars
-          resetMouseVars();
-        }
+        //   // clear mouse event vars
+        //   resetMouseVars();
+        // }
 
         function spliceLinksForNode(node) {
           var toSplice = links.filter(function (l) {
@@ -381,84 +544,70 @@
           });
         }
 
-        // only respond once per keydown
-        var lastKeyDown = -1;
+        function zoomed() {
+          // var stroke = nominal_stroke;
+          // if (nominal_stroke * zoom.scale() > max_stroke) stroke = max_stroke / zoom.scale();
+          // link.style('stroke-width', stroke);
+          // circle.style('stroke-width', stroke);
 
-        function keydown() {
-          d3.event.preventDefault();
+          // var base_radius = nominal_base_node_size;
+          // if (nominal_base_node_size * zoom.scale() > max_base_node_size) base_radius = max_base_node_size / zoom.scale();
+          // circle.attr('d', d3.svg.symbol()
+          //   .size(function (d) {
+          //     return Math.PI * Math.pow(size(d.size) * base_radius / nominal_base_node_size || base_radius, 2);
+          //   })
+          //   .type(function (d) {
+          //     return d.type;
+          //   }))
 
-          if (lastKeyDown !== -1) return;
-          lastKeyDown = d3.event.keyCode;
+          // //circle.attr('r', function(d) { return (size(d.size)*base_radius/nominal_base_node_size||base_radius); })
+          // if (!text_center) text.attr('dx', function (d) {
+          //   return (size(d.size) * base_radius / nominal_base_node_size || base_radius);
+          // });
 
-          // ctrl
-          if (d3.event.keyCode === 17) {
-            circle.call(force.drag);
-            svg.classed('ctrl', true);
-          }
+          // var text_size = nominal_text_size;
+          // if (nominal_text_size * zoom.scale() > max_text_size) text_size = max_text_size / zoom.scale();
+          // text.style('font-size', text_size + 'px');
 
-          if (!selected_node && !selected_link) return;
-          switch (d3.event.keyCode) {
-          case 8: // backspace
-          case 46: // delete
-            if (selected_node) {
-              nodes.splice(nodes.indexOf(selected_node), 1);
-              spliceLinksForNode(selected_node);
-            } else if (selected_link) {
-              links.splice(links.indexOf(selected_link), 1);
-            }
-            selected_link = null;
-            selected_node = null;
-            restart();
-            break;
-          case 66: // B
-            if (selected_link) {
-              // set link direction to both left and right
-              selected_link.left = true;
-              selected_link.right = true;
-            }
-            restart();
-            break;
-          case 76: // L
-            if (selected_link) {
-              // set link direction to left only
-              selected_link.left = true;
-              selected_link.right = false;
-            }
-            restart();
-            break;
-          case 82: // R
-            if (selected_node) {
-              // toggle node reflexivity
-              selected_node.reflexive = !selected_node.reflexive;
-            } else if (selected_link) {
-              // set link direction to right only
-              selected_link.left = false;
-              selected_link.right = true;
-            }
-            restart();
-            break;
-          }
+          // var newTextSize = textSize * zoom.scale();
+          // if (newTextSize > 30) {
+          //   newTextSize = 30;
+          // }
+          // textSize = newTextSize;
+          // rectHeight = rectHeight * zoom.scale();
+          // if (rectHeight > 40) {
+          //   rectHeight = 40;
+          // }
+          // selectedRectHeight = rectHeight + 10;
+          // if (selectedRectHeight > 50) {
+          //   selectedRectHeight = 50;
+          // }
+          // strokeWidth = strokeWidth * zoom.scale();
+          // if (strokeWidth > 10) {
+          //   strokeWidth = 10;
+          // }
+          container.attr('transform', 'translate(' + d3.event.translate + ')scale(' + d3.event.scale + ')');
+          restart();
         }
 
-        function keyup() {
-          lastKeyDown = -1;
+        function resize() {
+          var width = window.innerWidth,
+            height = window.innerHeight;
+          svg.attr('width', width).attr('height', height);
 
-          // ctrl
-          if (d3.event.keyCode === 17) {
-            circle
-              .on('mousedown.drag', null)
-              .on('touchstart.drag', null);
-            svg.classed('ctrl', false);
-          }
+          force.size([force.size()[0] + (width - w) / zoom.scale(), force.size()[1] + (height - h) / zoom.scale()]).resume();
+          w = width;
+          h = height;
         }
-
         // app starts here
-        svg.on('mousedown', mousedown)
-          .on('mousemove', mousemove)
-          .on('mouseup', mouseup);
-        d3.select(window)
-          .on('keydown', keydown)
-          .on('keyup', keyup);
+        svg
+        // .on('mousemove', mousemove)
+        //   .on('mouseup', mouseup)
+          .on('dblclick', dblClick);
+
+        container.on('rezise', resize);
+        zoom.on('zoom', zoomed);
+        // svg.call(zoom);
         restart();
       }
     }
